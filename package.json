@@ -1,0 +1,17 @@
+{
+  "name": "zhangben",
+  "version": "1.0.0",
+  "description": "雪球账本 - 个人记账应用",
+  "private": true,
+  "scripts": {
+    "dev:server": "node server/index.js",
+    "dev:client": "npm run dev --prefix client",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "npm run build --prefix client",
+    "start": "node server/index.js",
+    "init-db": "node server/database/init.js"
+  },
+  "dependencies": {
+    "concurrently": "^8.2.0"
+  }
+}

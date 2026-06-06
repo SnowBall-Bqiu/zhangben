@@ -1,0 +1,5 @@
+node_modules
+.kilo
+server/database/*.db
+client/dist
+*.log
