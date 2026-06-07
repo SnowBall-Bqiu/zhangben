@@ -1,29 +1,93 @@
 const express = require('express');
+const {
+  validateType,
+  validateName,
+  validateOptionalText,
+  parsePositiveInteger,
+  parseOptionalPositiveInteger,
+  parsePageLimit,
+  parseAmount,
+  validateDate,
+  escapeLike,
+} = require('../utils/validation');
 const router = express.Router();
+
+const TRANSACTION_TYPES = ['income', 'expense'];
 
 // CSV 安全转义：防止公式注入 + 双引号转义
 function csvSafe(val) {
   if (val == null) return '""';
-  const s = String(val).replace(/"/g, '""').replace(/^[=+\-@\t\r]/, "'$&");
+  let s = String(val).replace(/"/g, '""');
+  const normalized = s.replace(/^[\uFEFF\s\u0000-\u001F]+/, '');
+  if (/^[=+\-@]/.test(normalized)) {
+    s = `'${s}`;
+  }
   return `"${s}"`;
+}
+
+function getTransactionPayload(db, body) {
+  const type = validateType(body.type, TRANSACTION_TYPES, '类型');
+  const name = validateName(body.name, '名称', 50);
+  const amount = parseAmount(body.amount, '金额');
+  const profit = body.profit != null && body.profit !== ''
+    ? parseAmount(body.profit, '盈利金额')
+    : amount;
+  const transactionDate = validateDate(body.transaction_date);
+  const note = validateOptionalText(body.note, '备注', 500);
+  const categoryId = parseOptionalPositiveInteger(body.category_id, '分类ID');
+  const accountId = parseOptionalPositiveInteger(body.account_id, '账户ID');
+
+  if (categoryId) {
+    const category = db.prepare('SELECT id, type FROM categories WHERE id = ?').get(categoryId);
+    if (!category) {
+      return { error: { status: 404, message: '分类不存在' } };
+    }
+    if (category.type !== type) {
+      return { error: { status: 400, message: '分类类型与账目类型不一致' } };
+    }
+  }
+
+  if (accountId) {
+    const account = db.prepare('SELECT id FROM accounts WHERE id = ?').get(accountId);
+    if (!account) {
+      return { error: { status: 404, message: '账户不存在' } };
+    }
+  }
+
+  return {
+    data: {
+      name,
+      amount,
+      type,
+      profit,
+      categoryId,
+      accountId,
+      note,
+      transactionDate,
+    },
+  };
 }
 
 // GET /api/transactions - 获取账目列表（支持筛选、分页）
 router.get('/', (req, res) => {
   const db = req.app.get('db');
   const { type, search, page = 1, limit = 20 } = req.query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const { pageNum, limitNum, offset } = parsePageLimit(page, limit);
 
   let where = 'WHERE 1=1';
   const params = [];
 
   if (type && type !== 'all') {
+    const queryType = validateType(type, TRANSACTION_TYPES, '类型');
     where += ' AND t.type = ?';
-    params.push(type);
+    params.push(queryType);
   }
   if (search) {
-    where += ' AND t.name LIKE ?';
-    params.push(`%${search}%`);
+    const keyword = validateOptionalText(search, '搜索关键词', 50);
+    if (keyword) {
+      where += " AND t.name LIKE ? ESCAPE '\\'";
+      params.push(`%${escapeLike(keyword)}%`);
+    }
   }
 
   const countSql = `SELECT COUNT(*) as total FROM transactions t ${where}`;
@@ -38,9 +102,9 @@ router.get('/', (req, res) => {
     ORDER BY t.transaction_date DESC, t.id DESC
     LIMIT ? OFFSET ?
   `;
-  const data = db.prepare(sql).all(...params, parseInt(limit), offset);
+  const data = db.prepare(sql).all(...params, limitNum, offset);
 
-  res.json({ data, total, page: parseInt(page), limit: parseInt(limit) });
+  res.json({ data, total, page: pageNum, limit: limitNum });
 });
 
 // GET /api/transactions/export - 导出CSV
@@ -69,26 +133,20 @@ router.get('/export', (req, res) => {
 // POST /api/transactions - 新增账目
 router.post('/', (req, res) => {
   const db = req.app.get('db');
-  const { name, amount, type, profit: customProfit, category_id, account_id, note, transaction_date } = req.body;
-
-  if (!name || !amount || !type || !transaction_date) {
-    return res.status(400).json({ error: true, message: '参数错误：名称、金额、类型、日期为必填' });
+  const { data, error } = getTransactionPayload(db, req.body);
+  if (error) {
+    return res.status(error.status).json({ error: true, message: error.message });
   }
-
-  const absAmount = Math.abs(amount);
-  const profit = customProfit != null && customProfit !== ''
-    ? Math.abs(customProfit)
-    : absAmount;
 
   const insertTxn = db.transaction(() => {
     const result = db.prepare(`
       INSERT INTO transactions (name, amount, type, profit, category_id, account_id, note, transaction_date)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, absAmount, type, profit, category_id || null, account_id || null, note || null, transaction_date);
+    `).run(data.name, data.amount, data.type, data.profit, data.categoryId, data.accountId, data.note, data.transactionDate);
 
-    if (account_id) {
-      const balanceDelta = type === 'income' ? absAmount : -absAmount;
-      db.prepare('UPDATE accounts SET balance = balance + ? WHERE id = ?').run(balanceDelta, account_id);
+    if (data.accountId) {
+      const balanceDelta = data.type === 'income' ? data.amount : -data.amount;
+      db.prepare('UPDATE accounts SET balance = balance + ? WHERE id = ?').run(balanceDelta, data.accountId);
     }
 
     return result.lastInsertRowid;
@@ -101,18 +159,16 @@ router.post('/', (req, res) => {
 // PUT /api/transactions/:id - 修改账目
 router.put('/:id', (req, res) => {
   const db = req.app.get('db');
-  const { id } = req.params;
-  const { name, amount, type, profit: customProfit, category_id, account_id, note, transaction_date } = req.body;
+  const id = parsePositiveInteger(req.params.id, '账目ID');
+  const { data, error } = getTransactionPayload(db, req.body);
+  if (error) {
+    return res.status(error.status).json({ error: true, message: error.message });
+  }
 
   const existing = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
   if (!existing) {
     return res.status(404).json({ error: true, message: '记录不存在' });
   }
-
-  const absAmount = Math.abs(amount);
-  const profit = customProfit != null && customProfit !== ''
-    ? Math.abs(customProfit)
-    : absAmount;
 
   const updateTxn = db.transaction(() => {
     // 回退旧账户余额（用旧的 amount）
@@ -124,12 +180,12 @@ router.put('/:id', (req, res) => {
     db.prepare(`
       UPDATE transactions SET name=?, amount=?, type=?, profit=?, category_id=?, account_id=?, note=?, transaction_date=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=?
-    `).run(name, absAmount, type, profit, category_id || null, account_id || null, note || null, transaction_date, id);
+    `).run(data.name, data.amount, data.type, data.profit, data.categoryId, data.accountId, data.note, data.transactionDate, id);
 
     // 更新新账户余额（用新的 amount）
-    if (account_id) {
-      const newDelta = type === 'income' ? absAmount : -absAmount;
-      db.prepare('UPDATE accounts SET balance = balance + ? WHERE id = ?').run(newDelta, account_id);
+    if (data.accountId) {
+      const newDelta = data.type === 'income' ? data.amount : -data.amount;
+      db.prepare('UPDATE accounts SET balance = balance + ? WHERE id = ?').run(newDelta, data.accountId);
     }
   });
 
@@ -140,7 +196,7 @@ router.put('/:id', (req, res) => {
 // DELETE /api/transactions/:id - 删除账目
 router.delete('/:id', (req, res) => {
   const db = req.app.get('db');
-  const { id } = req.params;
+  const id = parsePositiveInteger(req.params.id, '账目ID');
 
   const existing = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
   if (!existing) {

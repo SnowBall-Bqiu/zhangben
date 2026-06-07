@@ -70,18 +70,21 @@ function ProfileSettings({ user, onUserUpdate }) {
 }
 
 function PasswordSettings() {
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!currentPassword) { showToast('请输入当前密码', 'error'); return; }
     if (newPassword.length < 6) { showToast('密码长度不能少于6位', 'error'); return; }
     if (newPassword !== confirmPassword) { showToast('两次输入的密码不一致', 'error'); return; }
     setLoading(true);
     try {
-      const data = await changePassword(newPassword);
+      const data = await changePassword(currentPassword, newPassword);
       showToast(data.message);
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (err) { showToast(err.message, 'error'); }
@@ -93,6 +96,10 @@ function PasswordSettings() {
       <h3>修改密码</h3>
       <p className="settings-desc">修改你的登录密码</p>
       <form onSubmit={handleSubmit} className="settings-form">
+        <div className="form-group">
+          <label>当前密码</label>
+          <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} placeholder="请输入当前密码" />
+        </div>
         <div className="form-group">
           <label>新密码</label>
           <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="至少6位" />

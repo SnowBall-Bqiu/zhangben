@@ -1,4 +1,5 @@
 const express = require('express');
+const { parsePositiveInteger } = require('../utils/validation');
 const router = express.Router();
 
 // GET /api/dashboard/summary - 首页汇总数据
@@ -88,9 +89,19 @@ router.get('/monthly', (req, res) => {
     return res.status(400).json({ error: true, message: '请提供年份和月份' });
   }
 
-  const monthStr = String(month).padStart(2, '0');
-  const monthStart = `${year}-${monthStr}-01`;
-  const monthEnd = `${year}-${monthStr}-31`;
+  const yearNum = parsePositiveInteger(year, '年份');
+  const monthNum = parsePositiveInteger(month, '月份');
+  if (yearNum < 1970 || yearNum > 2100) {
+    return res.status(400).json({ error: true, message: '年份必须在 1970 到 2100 之间' });
+  }
+  if (monthNum < 1 || monthNum > 12) {
+    return res.status(400).json({ error: true, message: '月份必须在 1 到 12 之间' });
+  }
+
+  const monthStr = String(monthNum).padStart(2, '0');
+  const lastDay = new Date(yearNum, monthNum, 0).getDate();
+  const monthStart = `${yearNum}-${monthStr}-01`;
+  const monthEnd = `${yearNum}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
 
   // 月度汇总
   const summary = db.prepare(`

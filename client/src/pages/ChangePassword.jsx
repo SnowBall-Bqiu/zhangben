@@ -3,12 +3,17 @@ import { changePassword, fetchMe } from '../api';
 import { showToast } from '../components/Toast';
 
 export default function ChangePassword({ onDone }) {
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!currentPassword) {
+      showToast('请输入当前密码', 'error');
+      return;
+    }
     if (newPassword.length < 6) {
       showToast('密码长度不能少于6位', 'error');
       return;
@@ -19,7 +24,7 @@ export default function ChangePassword({ onDone }) {
     }
     setLoading(true);
     try {
-      await changePassword(newPassword);
+      await changePassword(currentPassword, newPassword);
       showToast('密码修改成功');
       const data = await fetchMe();
       onDone(data.user);
@@ -37,13 +42,22 @@ export default function ChangePassword({ onDone }) {
         <p className="login-subtitle">为了您的数据安全，请立即修改默认密码</p>
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
+            <label>当前密码</label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={e => setCurrentPassword(e.target.value)}
+              placeholder="请输入当前密码"
+              autoFocus
+            />
+          </div>
+          <div className="form-group">
             <label>新密码</label>
             <input
               type="password"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
               placeholder="至少6位"
-              autoFocus
             />
           </div>
           <div className="form-group">

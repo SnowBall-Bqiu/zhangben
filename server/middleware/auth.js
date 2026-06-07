@@ -6,7 +6,14 @@ function authMiddleware(req, res, next) {
   const db = req.app.get('db');
   const user = db.prepare('SELECT must_change_password FROM users WHERE id = ?').get(req.session.userId);
 
-  if (user && user.must_change_password && !req.path.includes('change-password') && req.path !== '/me') {
+  if (!user) {
+    req.session.destroy(() => {
+      res.status(401).json({ error: true, message: '会话已失效，请重新登录' });
+    });
+    return;
+  }
+
+  if (user.must_change_password) {
     return res.status(403).json({ error: true, message: '请先修改密码', mustChangePassword: true });
   }
 
