@@ -1,11 +1,14 @@
 const session = require('express-session');
 const Database = require('better-sqlite3');
+const fs = require('fs');
 const path = require('path');
 
 class BetterSqlite3Store extends session.Store {
   constructor(options = {}) {
     super();
-    const dbPath = options.dbPath || path.join(__dirname, '..', 'database', 'sessions.db');
+    const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'database');
+    const dbPath = options.dbPath || path.join(dataDir, 'sessions.db');
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.exec(`

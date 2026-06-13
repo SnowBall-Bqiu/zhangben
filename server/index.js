@@ -1,7 +1,8 @@
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
-const { initDatabase, DB_PATH } = require('./database/init');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const { initDatabase, DB_PATH, DATA_DIR } = require('./database/init');
 const Database = require('better-sqlite3');
 const BetterSqlite3Store = require('./middleware/session-store');
 const securityHeaders = require('./middleware/security-headers');
@@ -12,7 +13,14 @@ initDatabase();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const mutatingMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const HOST = process.env.HOST || '0.0.0.0';
+const mutatingMethods = new Set(['POST', 'PUT', 'PATCH']);
+
+function envFlag(name, defaultValue = false) {
+  const value = process.env[name];
+  if (value === undefined) return defaultValue;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+}
 
 app.disable('x-powered-by');
 
@@ -42,7 +50,9 @@ app.use((err, req, res, next) => {
 });
 
 // Session 配置
-const isProduction = process.env.NODE_ENV === 'production';
+const nodeEnv = process.env.NODE_ENV || 'production';
+const isProduction = nodeEnv === 'production';
+const secureSessionCookie = envFlag('SESSION_COOKIE_SECURE', false);
 if (isProduction) {
   if (!process.env.SESSION_SECRET) {
     throw new Error('生产环境必须设置 SESSION_SECRET');
@@ -50,8 +60,8 @@ if (isProduction) {
   app.set('trust proxy', 1);
 }
 app.use(session({
-  name: isProduction ? '__Host-zhangben.sid' : 'zhangben.sid',
-  store: new BetterSqlite3Store({ dbPath: path.join(__dirname, 'database', 'sessions.db') }),
+  name: secureSessionCookie ? '__Host-zhangben.sid' : 'zhangben.sid',
+  store: new BetterSqlite3Store({ dbPath: path.join(DATA_DIR, 'sessions.db') }),
   secret: process.env.SESSION_SECRET || 'zhangben-dev-secret-change-in-production',
   resave: false,
   saveUninitialized: false,
@@ -59,7 +69,7 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7天
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProduction,
+    secure: secureSessionCookie,
     path: '/'
   }
 }));
@@ -130,6 +140,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: true, message: '服务器内部错误' });
 });
 
-app.listen(PORT, () => {
-  console.log(`雪球账本服务已启动: http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`雪球账本服务已启动: http://${HOST}:${PORT}`);
 });

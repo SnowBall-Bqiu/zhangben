@@ -762,6 +762,11 @@ input::placeholder {
   color: var(--text-tertiary);
 }
 
+.profit-note {
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
 .transaction-actions {
   display: flex;
   align-items: center;
@@ -951,6 +956,7 @@ input::placeholder {
 
 .day-income { color: var(--income-color); }
 .day-expense { color: var(--expense-color); }
+.day-profit { color: var(--text-tertiary); opacity: 0.7; }
 
 /* ========== 分类明细 ========== */
 .category-stats {

@@ -130,7 +130,8 @@ router.get('/monthly', (req, res) => {
     SELECT
       SUBSTR(transaction_date, 1, 10) as date,
       COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as income,
-      COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expense
+      COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expense,
+      COALESCE(SUM(CASE WHEN type='income' THEN profit ELSE 0 END), 0) as profit
     FROM transactions
     WHERE transaction_date >= ? AND transaction_date <= ?
     GROUP BY SUBSTR(transaction_date, 1, 10)

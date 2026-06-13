@@ -1,0 +1,15 @@
+.git
+.kilo
+node_modules
+server/node_modules
+client/node_modules
+client/dist
+data
+server/database/*.db
+server/database/*.db-shm
+server/database/*.db-wal
+.env
+*.log
+npm-debug.log*
+Dockerfile
+.dockerignore

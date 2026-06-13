@@ -199,7 +199,10 @@ export default function Dashboard() {
                 </div>
                 <div className="transaction-info">
                   <span className="transaction-name">{t.name}</span>
-                  <span className="transaction-meta">{t.category_name} · {formatDateTime(t.transaction_date)}</span>
+                  <span className="transaction-meta">
+                    {t.category_name} · {formatDateTime(t.transaction_date)}
+                    {t.type === 'income' && t.profit > 0 && <span className="profit-note"> · 盈利{formatAmount(t.profit)}</span>}
+                  </span>
                 </div>
                 <span className={`amount ${t.type === 'income' ? 'amount-income' : 'amount-expense'}`}>
                   {t.type === 'income' ? '+' : '-'}{formatAmount(t.amount)}

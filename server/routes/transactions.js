@@ -31,7 +31,7 @@ function getTransactionPayload(db, body) {
   const amount = parseAmount(body.amount, '金额');
   const profit = body.profit != null && body.profit !== ''
     ? parseAmount(body.profit, '盈利金额')
-    : amount;
+    : 0;
   const transactionDate = validateDate(body.transaction_date);
   const note = validateOptionalText(body.note, '备注', 500);
   const categoryId = parseOptionalPositiveInteger(body.category_id, '分类ID');

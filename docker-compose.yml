@@ -1,0 +1,11 @@
+services:
+  zhangben:
+    image: registry.cn-hangzhou.aliyuncs.com/bqiu/zhangben:1.0
+    container_name: zhangben
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      - ./data:/app/data

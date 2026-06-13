@@ -130,6 +130,7 @@ export default function Monthly() {
                         <div className="day-amounts">
                           {dailyMap[day].income > 0 && <span className="day-income">+{formatAmount(dailyMap[day].income)}</span>}
                           {dailyMap[day].expense > 0 && <span className="day-expense">-{formatAmount(dailyMap[day].expense)}</span>}
+                          {dailyMap[day].profit > 0 && <span className="day-profit">利{formatAmount(dailyMap[day].profit)}</span>}
                         </div>
                       )}
                     </>

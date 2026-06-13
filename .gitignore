@@ -1,5 +1,9 @@
 node_modules
 .kilo
+.env
+data/
 server/database/*.db
+server/database/*.db-shm
+server/database/*.db-wal
 client/dist
 *.log

@@ -10,8 +10,8 @@ export default function AddRecord({ onClose, onSuccess, editData }) {
   const [categoryId, setCategoryId] = useState(editData?.category_id?.toString() || '');
   const [accountId, setAccountId] = useState(editData?.account_id?.toString() || '');
   const [note, setNote] = useState(editData?.note || '');
-  const [customProfit, setCustomProfit] = useState(editData?.profit != null && editData?.type === 'income' && editData.profit !== editData.amount);
-  const [profit, setProfit] = useState(editData?.profit != null && editData?.type === 'income' && editData.profit !== editData.amount ? editData.profit.toString() : '');
+  const [customProfit, setCustomProfit] = useState(editData?.profit != null && editData?.type === 'income' && editData.profit > 0);
+  const [profit, setProfit] = useState(editData?.profit != null && editData?.type === 'income' && editData.profit > 0 ? editData.profit.toString() : '');
   const [date, setDate] = useState(editData?.transaction_date?.slice(0, 10) || new Date().toISOString().slice(0, 10));
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
