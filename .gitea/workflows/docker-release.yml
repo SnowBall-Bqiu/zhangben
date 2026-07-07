@@ -38,23 +38,26 @@ jobs:
           test -n "$ALIYUN_REGISTRY_PASSWORD" || (echo "ALIYUN_REGISTRY_PASSWORD secret is empty" && exit 1)
           echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$REGISTRY" --username "$REGISTRY_USERNAME" --password-stdin
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Check Docker daemon
+        run: |
+          if [ -z "$DOCKER_HOST" ] && [ ! -S /var/run/docker.sock ]; then
+            echo "Docker daemon is unavailable: /var/run/docker.sock is missing. Configure the Gitea runner with Docker access."
+            exit 1
+          fi
+          docker info
 
       - name: Build and push Docker image
         if: ${{ github.event_name == 'release' }}
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        run: |
+          docker build \
+            -t "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG" \
+            -t "$REGISTRY/$IMAGE_NAME:latest" \
+            .
+          docker push "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+          docker push "$REGISTRY/$IMAGE_NAME:latest"
 
       - name: Build and push Docker image for commit
         if: ${{ github.event_name == 'push' }}
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+        run: |
+          docker build -t "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG" .
+          docker push "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
