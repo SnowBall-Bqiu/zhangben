@@ -4,6 +4,7 @@ const {
   validateName,
   validateOptionalText,
   parsePositiveInteger,
+  parseBalanceAmount,
 } = require('../utils/validation');
 const router = express.Router();
 
@@ -19,13 +20,14 @@ router.get('/', (req, res) => {
 // POST /api/accounts
 router.post('/', (req, res) => {
   const db = req.app.get('db');
-  const { name, type, icon } = req.body;
+  const { name, type, icon, balance } = req.body;
   const accountName = validateName(name, '账户名称', 10);
   const accountType = validateType(type, ACCOUNT_TYPES, '账户类型');
   const accountIcon = validateOptionalText(icon, '图标', 50);
+  const accountBalance = balance == null || balance === '' ? 0 : parseBalanceAmount(balance, '账户余额');
   const maxOrder = db.prepare('SELECT MAX(sort_order) as max FROM accounts').get();
   const sort_order = (maxOrder.max || 0) + 1;
-  const result = db.prepare('INSERT INTO accounts (name, type, icon, sort_order) VALUES (?, ?, ?, ?)').run(accountName, accountType, accountIcon, sort_order);
+  const result = db.prepare('INSERT INTO accounts (name, type, icon, balance, sort_order) VALUES (?, ?, ?, ?, ?)').run(accountName, accountType, accountIcon, accountBalance, sort_order);
   res.json({ message: '账户创建成功', id: result.lastInsertRowid });
 });
 
@@ -60,11 +62,12 @@ router.put('/reorder', (req, res) => {
 router.put('/:id', (req, res) => {
   const db = req.app.get('db');
   const id = parsePositiveInteger(req.params.id, '账户ID');
-  const { name, icon, sort_order } = req.body;
+  const { name, icon, sort_order, balance } = req.body;
   const accountName = name == null ? null : validateName(name, '账户名称', 10);
   const accountIcon = icon == null ? null : validateOptionalText(icon, '图标', 50);
   const sortOrder = sort_order == null ? null : parsePositiveInteger(sort_order, '排序值');
-  const result = db.prepare('UPDATE accounts SET name=COALESCE(?,name), icon=COALESCE(?,icon), sort_order=COALESCE(?,sort_order) WHERE id=?').run(accountName, accountIcon, sortOrder, id);
+  const accountBalance = balance == null || balance === '' ? null : parseBalanceAmount(balance, '账户余额');
+  const result = db.prepare('UPDATE accounts SET name=COALESCE(?,name), icon=COALESCE(?,icon), sort_order=COALESCE(?,sort_order), balance=COALESCE(?,balance) WHERE id=?').run(accountName, accountIcon, sortOrder, accountBalance, id);
   if (result.changes === 0) {
     return res.status(404).json({ error: true, message: '账户不存在' });
   }

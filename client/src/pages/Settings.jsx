@@ -1,7 +1,8 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { User, Key, Tags, Plus, Trash2, GripVertical, X, Check } from 'lucide-react';
+import { User, Key, Tags, WalletCards, Plus, Trash2, GripVertical, X, Check } from 'lucide-react';
 import { updateProfile, changePassword, fetchCategories, createCategory, updateCategory, deleteCategory, reorderCategories, fetchAccounts, createAccount, updateAccount, deleteAccount, reorderAccounts } from '../api';
 import { showToast } from '../components/Toast';
+import { formatAmount } from '../utils/format';
 
 export default function Settings({ user, onUserUpdate }) {
   const [activeTab, setActiveTab] = useState('profile');
@@ -22,12 +23,16 @@ export default function Settings({ user, onUserUpdate }) {
           <button className={`settings-nav-item ${activeTab === 'tags' ? 'active' : ''}`} onClick={() => setActiveTab('tags')}>
             <Tags size={18} /><span>标签修改</span>
           </button>
+          <button className={`settings-nav-item ${activeTab === 'balances' ? 'active' : ''}`} onClick={() => setActiveTab('balances')}>
+            <WalletCards size={18} /><span>账户余额</span>
+          </button>
         </nav>
       </div>
       <div className="settings-content">
         {activeTab === 'profile' && <ProfileSettings user={user} onUserUpdate={onUserUpdate} />}
         {activeTab === 'password' && <PasswordSettings />}
         {activeTab === 'tags' && <TagSettings />}
+        {activeTab === 'balances' && <AccountBalanceSettings />}
       </div>
     </div>
   );
@@ -126,6 +131,67 @@ function TagSettings() {
         <button className={`type-tab ${tagType === 'income' ? 'active income' : ''}`} onClick={() => setTagType('income')}>收入</button>
       </div>
       <TagSection type={tagType} />
+    </div>
+  );
+}
+
+function AccountBalanceSettings() {
+  const [accounts, setAccounts] = useState([]);
+  const [balances, setBalances] = useState({});
+  const [savingId, setSavingId] = useState(null);
+
+  const typeLabels = { cash: '现金', bank: '银行卡', alipay: '支付宝', wechat: '微信', other: '其他' };
+
+  const loadAccounts = useCallback(() => {
+    fetchAccounts()
+      .then(d => {
+        setAccounts(d.data);
+        setBalances(Object.fromEntries(d.data.map(account => [account.id, String(Number(account.balance || 0).toFixed(2))])));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { loadAccounts(); }, [loadAccounts]);
+
+  const handleSave = async (account) => {
+    const value = balances[account.id];
+    setSavingId(account.id);
+    try {
+      await updateAccount(account.id, { balance: value });
+      showToast('账户余额已保存');
+      loadAccounts();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  return (
+    <div className="settings-panel">
+      <h3>账户余额</h3>
+      <p className="settings-desc">手动设置已有账户余额。这里不会新增账目，也不会计入月报、年报或趋势统计。</p>
+      <div className="balance-list">
+        {accounts.map(account => (
+          <div key={account.id} className="balance-item">
+            <div className="balance-info">
+              <span className="balance-name">{account.name}</span>
+              <span className="balance-meta">{typeLabels[account.type] || account.type} · 当前 {formatAmount(account.balance)}</span>
+            </div>
+            <input
+              type="number"
+              step="0.01"
+              value={balances[account.id] ?? ''}
+              onChange={e => setBalances(prev => ({ ...prev, [account.id]: e.target.value }))}
+              placeholder="0.00"
+            />
+            <button className="btn-primary" onClick={() => handleSave(account)} disabled={savingId === account.id}>
+              {savingId === account.id ? '保存中...' : '保存'}
+            </button>
+          </div>
+        ))}
+        {accounts.length === 0 && <div className="tag-empty">暂无账户</div>}
+      </div>
     </div>
   );
 }

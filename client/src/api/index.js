@@ -91,3 +91,4 @@ export const reorderAccounts = (ids) => request('/accounts/reorder', { method: '
 export const fetchDashboardSummary = () => request('/dashboard/summary');
 export const fetchDashboardTrend = () => request('/dashboard/trend');
 export const fetchMonthlyData = (year, month) => request(`/dashboard/monthly?${new URLSearchParams({ year, month }).toString()}`);
+export const fetchYearlyData = (year) => request(`/dashboard/yearly?${new URLSearchParams({ year }).toString()}`);

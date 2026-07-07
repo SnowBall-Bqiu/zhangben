@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Sun, Moon, Home, Receipt, CalendarDays, Settings, LogOut } from 'lucide-react';
+import { Sun, Moon, Home, Receipt, CalendarDays, CalendarRange, Settings, LogOut } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { logout } from '../api';
 
@@ -33,6 +33,10 @@ export default function Header({ user, onLogout }) {
           <NavLink to="/monthly" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
             <CalendarDays size={18} />
             <span>月报</span>
+          </NavLink>
+          <NavLink to="/yearly" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+            <CalendarRange size={18} />
+            <span>年报</span>
           </NavLink>
           <NavLink to="/settings" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
             <Settings size={18} />

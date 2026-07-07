@@ -141,4 +141,83 @@ router.get('/monthly', (req, res) => {
   res.json({ summary, categoryStats, dailyStats });
 });
 
+// GET /api/dashboard/yearly - 年度账单数据
+router.get('/yearly', (req, res) => {
+  const db = req.app.get('db');
+  const { year } = req.query;
+
+  if (!year) {
+    return res.status(400).json({ error: true, message: '请提供年份' });
+  }
+
+  const yearNum = parsePositiveInteger(year, '年份');
+  if (yearNum < 1970 || yearNum > 2100) {
+    return res.status(400).json({ error: true, message: '年份必须在 1970 到 2100 之间' });
+  }
+
+  const yearStart = `${yearNum}-01-01`;
+  const yearEnd = `${yearNum}-12-31`;
+
+  const summary = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as income,
+      COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expense,
+      COALESCE(SUM(profit), 0) as profit
+    FROM transactions
+    WHERE transaction_date >= ? AND transaction_date <= ?
+  `).get(yearStart, yearEnd);
+
+  const rawMonthlyStats = db.prepare(`
+    SELECT
+      SUBSTR(transaction_date, 6, 2) as month,
+      COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as income,
+      COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expense,
+      COALESCE(SUM(CASE WHEN type='income' THEN profit ELSE 0 END), 0) as profit,
+      COUNT(id) as count
+    FROM transactions
+    WHERE transaction_date >= ? AND transaction_date <= ?
+    GROUP BY SUBSTR(transaction_date, 6, 2)
+    ORDER BY month ASC
+  `).all(yearStart, yearEnd);
+
+  const monthlyByMonth = new Map(rawMonthlyStats.map(item => [Number(item.month), item]));
+  const monthlyStats = Array.from({ length: 12 }, (_, index) => {
+    const month = index + 1;
+    const row = monthlyByMonth.get(month);
+    return {
+      month,
+      label: `${month}月`,
+      income: row?.income || 0,
+      expense: row?.expense || 0,
+      profit: row?.profit || 0,
+      count: row?.count || 0,
+    };
+  });
+
+  const categoryStats = db.prepare(`
+    SELECT c.name, c.icon, c.type,
+      SUM(t.amount) as total,
+      COUNT(t.id) as count
+    FROM transactions t
+    JOIN categories c ON t.category_id = c.id
+    WHERE t.transaction_date >= ? AND t.transaction_date <= ?
+    GROUP BY c.id
+    ORDER BY total DESC
+  `).all(yearStart, yearEnd);
+
+  const accountStats = db.prepare(`
+    SELECT a.name, a.type,
+      COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount ELSE 0 END), 0) as income,
+      COALESCE(SUM(CASE WHEN t.type='expense' THEN t.amount ELSE 0 END), 0) as expense,
+      COUNT(t.id) as count
+    FROM transactions t
+    JOIN accounts a ON t.account_id = a.id
+    WHERE t.transaction_date >= ? AND t.transaction_date <= ?
+    GROUP BY a.id
+    ORDER BY count DESC, a.sort_order ASC, a.id ASC
+  `).all(yearStart, yearEnd);
+
+  res.json({ summary, monthlyStats, categoryStats, accountStats });
+});
+
 module.exports = router;

@@ -81,6 +81,15 @@ function parseAmount(value, field) {
   return parsed;
 }
 
+function parseBalanceAmount(value, field) {
+  const normalized = normalizeString(value);
+  ensure(/^-?(?:\d+)(?:\.\d{1,2})?$/.test(normalized), `${field}必须是最多两位小数的金额`);
+  const parsed = Number(normalized);
+  ensure(Number.isFinite(parsed), `${field}必须是最多两位小数的金额`);
+  ensure(Math.abs(parsed) <= MAX_AMOUNT, `${field}不能超过 ${MAX_AMOUNT}`);
+  return parsed;
+}
+
 function validateDate(value) {
   const normalized = normalizeString(value);
   ensure(/^\d{4}-\d{2}-\d{2}$/.test(normalized), '日期格式必须为 YYYY-MM-DD');
@@ -102,6 +111,7 @@ module.exports = {
   parseOptionalPositiveInteger,
   parsePageLimit,
   parseAmount,
+  parseBalanceAmount,
   validateDate,
   escapeLike,
 };
