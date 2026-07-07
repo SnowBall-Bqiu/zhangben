@@ -4,6 +4,7 @@ name: Docker Release
 # 仓库变量（Variables）：
 # - ALIYUN_REGISTRY_USERNAME：阿里云容器镜像服务 ACR 用户名
 # - ENABLE_PUSH_BUILD：是否在每次分支提交时构建镜像，设置为 true 时启用
+# - DOCKER_HOST：可选；在gitea自建实例中的工作流使用 Docker-in-Docker 时设置为 tcp://docker-in-docker:2375
 # 仓库密钥（Secrets）：
 # - ALIYUN_REGISTRY_PASSWORD：阿里云容器镜像服务 ACR 登录密码
 # - ALIYUN_REGISTRY_USERNAME：可选；未配置变量 ALIYUN_REGISTRY_USERNAME 时作为兜底用户名
@@ -18,6 +19,7 @@ on:
 env:
   REGISTRY: registry.cn-hangzhou.aliyuncs.com
   IMAGE_NAME: bqiu/zhangben
+  DOCKER_HOST: ${{ vars.DOCKER_HOST }}
 
 jobs:
   build-and-push:
