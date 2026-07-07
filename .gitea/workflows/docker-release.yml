@@ -1,5 +1,13 @@
 name: Docker Release
 
+# 需要在 Gitea 仓库中配置的变量和密钥：
+# 仓库变量（Variables）：
+# - ALIYUN_REGISTRY_USERNAME：阿里云容器镜像服务 ACR 用户名
+# - ENABLE_PUSH_BUILD：是否在每次分支提交时构建镜像，设置为 true 时启用
+# 仓库密钥（Secrets）：
+# - ALIYUN_REGISTRY_PASSWORD：阿里云容器镜像服务 ACR 登录密码
+# - ALIYUN_REGISTRY_USERNAME：可选；未配置变量 ALIYUN_REGISTRY_USERNAME 时作为兜底用户名
+
 on:
   push:
     branches:
