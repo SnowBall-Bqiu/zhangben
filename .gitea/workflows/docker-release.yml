@@ -29,12 +29,14 @@ jobs:
 
       - name: Login to Aliyun registry
         env:
-          ALIYUN_REGISTRY_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          ALIYUN_REGISTRY_USERNAME: ${{ vars.ALIYUN_REGISTRY_USERNAME }}
+          ALIYUN_REGISTRY_USERNAME_SECRET: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
           ALIYUN_REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
         run: |
-          test -n "$ALIYUN_REGISTRY_USERNAME" || (echo "ALIYUN_REGISTRY_USERNAME secret is empty" && exit 1)
+          REGISTRY_USERNAME="${ALIYUN_REGISTRY_USERNAME:-$ALIYUN_REGISTRY_USERNAME_SECRET}"
+          test -n "$REGISTRY_USERNAME" || (echo "ALIYUN_REGISTRY_USERNAME variable or secret is empty" && exit 1)
           test -n "$ALIYUN_REGISTRY_PASSWORD" || (echo "ALIYUN_REGISTRY_PASSWORD secret is empty" && exit 1)
-          echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$REGISTRY" --username "$ALIYUN_REGISTRY_USERNAME" --password-stdin
+          echo "$ALIYUN_REGISTRY_PASSWORD" | docker login "$REGISTRY" --username "$REGISTRY_USERNAME" --password-stdin
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
