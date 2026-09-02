@@ -9,6 +9,7 @@ RUN npm ci
 FROM node:24-slim AS client-build
 WORKDIR /app
 COPY --from=client-deps /app/client/node_modules ./client/node_modules
+COPY VERSION ./VERSION
 COPY client ./client
 RUN npm run build --prefix client
 

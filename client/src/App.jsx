@@ -6,6 +6,25 @@ import Login from './pages/Login';
 import ChangePassword from './pages/ChangePassword';
 import Toast from './components/Toast';
 
+function VersionFooter() {
+  return (
+    <footer className="app-footer" aria-label="应用版本">
+      <span>VERSION</span>
+      <span className="app-footer-version">{__APP_VERSION__}</span>
+    </footer>
+  );
+}
+
+function AppFrame({ children }) {
+  return (
+    <div className="app-layout">
+      {children}
+      <VersionFooter />
+      <Toast />
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -19,30 +38,31 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="loading-screen">
-        <div className="loading-dots">
-          <span></span><span></span><span></span>
+      <AppFrame>
+        <div className="loading-screen">
+          <div className="loading-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <p>加载中...</p>
         </div>
-        <p>加载中...</p>
-      </div>
+      </AppFrame>
     );
   }
 
   if (!user) {
-    return <><Login onLogin={setUser} /><Toast /></>;
+    return <AppFrame><Login onLogin={setUser} /></AppFrame>;
   }
 
   if (user.mustChangePassword) {
-    return <><ChangePassword onDone={setUser} /><Toast /></>;
+    return <AppFrame><ChangePassword onDone={setUser} /></AppFrame>;
   }
 
   return (
-    <div className="app-layout">
+    <AppFrame>
       <Header user={user} onLogout={() => setUser(null)} />
       <main className="main-content">
         <KeepAliveRoutes user={user} onUserUpdate={setUser} />
       </main>
-      <Toast />
-    </div>
+    </AppFrame>
   );
 }
