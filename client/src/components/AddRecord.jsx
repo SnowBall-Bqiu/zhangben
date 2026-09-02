@@ -3,6 +3,14 @@ import { X, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { createTransaction, updateTransaction, fetchCategories, fetchAccounts } from '../api';
 import { showToast } from './Toast';
 
+function resolveIncomeKind(editData) {
+  if (editData?.type !== 'income') return 'pure';
+  if (editData.income_kind === 'business' || editData.income_kind === 'pure') {
+    return editData.income_kind;
+  }
+  return editData.profit > 0 ? 'business' : 'pure';
+}
+
 export default function AddRecord({ onClose, onSuccess, editData }) {
   const [type, setType] = useState(editData?.type || 'expense');
   const [name, setName] = useState(editData?.name || '');
@@ -10,8 +18,10 @@ export default function AddRecord({ onClose, onSuccess, editData }) {
   const [categoryId, setCategoryId] = useState(editData?.category_id?.toString() || '');
   const [accountId, setAccountId] = useState(editData?.account_id?.toString() || '');
   const [note, setNote] = useState(editData?.note || '');
-  const [customProfit, setCustomProfit] = useState(editData?.profit != null && editData?.type === 'income' && editData.profit > 0);
-  const [profit, setProfit] = useState(editData?.profit != null && editData?.type === 'income' && editData.profit > 0 ? editData.profit.toString() : '');
+  const [incomeKind, setIncomeKind] = useState(resolveIncomeKind(editData));
+  const [profit, setProfit] = useState(
+    editData?.type === 'income' && editData?.profit > 0 ? editData.profit.toString() : ''
+  );
   const [date, setDate] = useState(editData?.transaction_date?.slice(0, 10) || new Date().toISOString().slice(0, 10));
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
@@ -28,8 +38,8 @@ export default function AddRecord({ onClose, onSuccess, editData }) {
       showToast('请填写名称和金额', 'error');
       return;
     }
-    if (type === 'income' && customProfit && (!profit || parseFloat(profit) <= 0)) {
-      showToast('请填写盈利金额', 'error');
+    if (type === 'income' && incomeKind === 'business' && profit && parseFloat(profit) < 0) {
+      showToast('盈利金额不能为负', 'error');
       return;
     }
     setLoading(true);
@@ -38,7 +48,8 @@ export default function AddRecord({ onClose, onSuccess, editData }) {
         name: name.trim(),
         amount: parseFloat(amount),
         type,
-        profit: type === 'income' && customProfit ? parseFloat(profit) : null,
+        income_kind: type === 'income' ? incomeKind : null,
+        profit: type === 'income' && incomeKind === 'business' && profit ? parseFloat(profit) : null,
         category_id: categoryId || null,
         account_id: accountId || null,
         note: note.trim() || null,
@@ -90,14 +101,32 @@ export default function AddRecord({ onClose, onSuccess, editData }) {
 
           {type === 'income' && (
             <div className="form-group">
-              <div className="switch-row">
-                <label>是否有盈利</label>
-                <button type="button" className={`switch ${customProfit ? 'on' : ''}`} onClick={() => { setCustomProfit(!customProfit); if (customProfit) setProfit(''); }}>
-                  <span className="switch-thumb" />
+              <label>收入类型</label>
+              <div className="kind-tabs">
+                <button
+                  type="button"
+                  className={`kind-tab ${incomeKind === 'pure' ? 'active pure' : ''}`}
+                  onClick={() => { setIncomeKind('pure'); setProfit(''); }}
+                >
+                  纯收入
+                </button>
+                <button
+                  type="button"
+                  className={`kind-tab ${incomeKind === 'business' ? 'active business' : ''}`}
+                  onClick={() => setIncomeKind('business')}
+                >
+                  经营
                 </button>
               </div>
-              {customProfit && (
-                <input type="number" value={profit} onChange={e => setProfit(e.target.value)} placeholder="请输入盈利金额" min="0.01" step="0.01" required />
+              {incomeKind === 'business' && (
+                <input
+                  type="number"
+                  value={profit}
+                  onChange={e => setProfit(e.target.value)}
+                  placeholder="盈利金额（可不填）"
+                  min="0"
+                  step="0.01"
+                />
               )}
             </div>
           )}

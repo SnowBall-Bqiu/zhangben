@@ -13,6 +13,7 @@ const {
 const router = express.Router();
 
 const TRANSACTION_TYPES = ['income', 'expense'];
+const INCOME_KINDS = ['pure', 'business'];
 
 // CSV 安全转义：防止公式注入 + 双引号转义
 function csvSafe(val) {
@@ -25,12 +26,22 @@ function csvSafe(val) {
   return `"${s}"`;
 }
 
+function parseOptionalProfit(value) {
+  if (value == null || value === '') return 0;
+  const normalized = String(value).trim();
+  if (/^0(?:\.0{1,2})?$/.test(normalized)) return 0;
+  return parseAmount(value, '盈利金额');
+}
+
 function getTransactionPayload(db, body) {
   const type = validateType(body.type, TRANSACTION_TYPES, '类型');
   const name = validateName(body.name, '名称', 50);
   const amount = parseAmount(body.amount, '金额');
-  const profit = body.profit != null && body.profit !== ''
-    ? parseAmount(body.profit, '盈利金额')
+  const incomeKind = type === 'income'
+    ? validateType(body.income_kind, INCOME_KINDS, '收入类型')
+    : null;
+  const profit = type === 'income' && incomeKind === 'business'
+    ? parseOptionalProfit(body.profit)
     : 0;
   const transactionDate = validateDate(body.transaction_date);
   const note = validateOptionalText(body.note, '备注', 500);
@@ -60,6 +71,7 @@ function getTransactionPayload(db, body) {
       amount,
       type,
       profit,
+      incomeKind,
       categoryId,
       accountId,
       note,
@@ -111,7 +123,7 @@ router.get('/', (req, res) => {
 router.get('/export', (req, res) => {
   const db = req.app.get('db');
   const rows = db.prepare(`
-    SELECT t.name, t.amount, t.type, t.profit, t.note, t.transaction_date,
+    SELECT t.name, t.amount, t.type, t.profit, t.income_kind, t.note, t.transaction_date,
            c.name as category_name, a.name as account_name
     FROM transactions t
     LEFT JOIN categories c ON t.category_id = c.id
@@ -120,9 +132,9 @@ router.get('/export', (req, res) => {
   `).all();
 
   const BOM = '\uFEFF';
-  const header = '名称,金额,类型,盈亏,分类,账户,备注,日期\n';
+  const header = '名称,金额,类型,收入类型,盈亏,分类,账户,备注,日期\n';
   const csv = rows.map(r =>
-    `${csvSafe(r.name)},${r.amount},${r.type === 'income' ? '收入' : '支出'},${r.profit},${csvSafe(r.category_name)},${csvSafe(r.account_name)},${csvSafe(r.note)},${csvSafe(r.transaction_date)}`
+    `${csvSafe(r.name)},${r.amount},${r.type === 'income' ? '收入' : '支出'},${r.income_kind === 'pure' ? '纯收入' : r.income_kind === 'business' ? '经营' : ''},${r.profit},${csvSafe(r.category_name)},${csvSafe(r.account_name)},${csvSafe(r.note)},${csvSafe(r.transaction_date)}`
   ).join('\n');
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -140,9 +152,9 @@ router.post('/', (req, res) => {
 
   const insertTxn = db.transaction(() => {
     const result = db.prepare(`
-      INSERT INTO transactions (name, amount, type, profit, category_id, account_id, note, transaction_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(data.name, data.amount, data.type, data.profit, data.categoryId, data.accountId, data.note, data.transactionDate);
+      INSERT INTO transactions (name, amount, type, profit, income_kind, category_id, account_id, note, transaction_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(data.name, data.amount, data.type, data.profit, data.incomeKind, data.categoryId, data.accountId, data.note, data.transactionDate);
 
     if (data.accountId) {
       const balanceDelta = data.type === 'income' ? data.amount : -data.amount;
@@ -178,9 +190,9 @@ router.put('/:id', (req, res) => {
     }
 
     db.prepare(`
-      UPDATE transactions SET name=?, amount=?, type=?, profit=?, category_id=?, account_id=?, note=?, transaction_date=?, updated_at=CURRENT_TIMESTAMP
+      UPDATE transactions SET name=?, amount=?, type=?, profit=?, income_kind=?, category_id=?, account_id=?, note=?, transaction_date=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=?
-    `).run(data.name, data.amount, data.type, data.profit, data.categoryId, data.accountId, data.note, data.transactionDate, id);
+    `).run(data.name, data.amount, data.type, data.profit, data.incomeKind, data.categoryId, data.accountId, data.note, data.transactionDate, id);
 
     // 更新新账户余额（用新的 amount）
     if (data.accountId) {

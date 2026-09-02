@@ -2,6 +2,20 @@ const express = require('express');
 const { parsePositiveInteger } = require('../utils/validation');
 const router = express.Router();
 
+const SUMMARY_SELECT = `
+  COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as income,
+  COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expense,
+  COALESCE(SUM(profit), 0) as profit,
+  COALESCE(SUM(CASE WHEN type='income' AND income_kind='pure' THEN amount ELSE 0 END), 0) as pure_income
+`;
+
+function withSurplus(row) {
+  const profit = row.profit || 0;
+  const pureIncome = row.pure_income || 0;
+  const expense = row.expense || 0;
+  return { ...row, surplus: profit + pureIncome - expense };
+}
+
 // GET /api/dashboard/summary - 首页汇总数据
 router.get('/summary', (req, res) => {
   const db = req.app.get('db');
@@ -14,14 +28,11 @@ router.get('/summary', (req, res) => {
   const monthEnd = `${year}-${month}-31`;
 
   // 本月汇总
-  const monthSummary = db.prepare(`
-    SELECT
-      COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as income,
-      COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expense,
-      COALESCE(SUM(profit), 0) as profit
+  const monthSummary = withSurplus(db.prepare(`
+    SELECT ${SUMMARY_SELECT}
     FROM transactions
     WHERE transaction_date >= ? AND transaction_date <= ?
-  `).get(monthStart, monthEnd);
+  `).get(monthStart, monthEnd));
 
   // 今日汇总
   const todaySummary = db.prepare(`
@@ -67,14 +78,12 @@ router.get('/trend', (req, res) => {
   }
 
   const trend = months.map(m => {
-    const row = db.prepare(`
-      SELECT
-        COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as income,
-        COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expense
+    const row = withSurplus(db.prepare(`
+      SELECT ${SUMMARY_SELECT}
       FROM transactions
       WHERE transaction_date >= ? AND transaction_date <= ?
-    `).get(m.start, m.end);
-    return { label: m.label, income: row.income, expense: row.expense };
+    `).get(m.start, m.end));
+    return { label: m.label, income: row.income, expense: row.expense, profit: row.profit, surplus: row.surplus, pure_income: row.pure_income };
   });
 
   res.json({ data: trend });
@@ -104,14 +113,11 @@ router.get('/monthly', (req, res) => {
   const monthEnd = `${yearNum}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
 
   // 月度汇总
-  const summary = db.prepare(`
-    SELECT
-      COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as income,
-      COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expense,
-      COALESCE(SUM(profit), 0) as profit
+  const summary = withSurplus(db.prepare(`
+    SELECT ${SUMMARY_SELECT}
     FROM transactions
     WHERE transaction_date >= ? AND transaction_date <= ?
-  `).get(monthStart, monthEnd);
+  `).get(monthStart, monthEnd));
 
   // 分类统计
   const categoryStats = db.prepare(`
@@ -158,21 +164,16 @@ router.get('/yearly', (req, res) => {
   const yearStart = `${yearNum}-01-01`;
   const yearEnd = `${yearNum}-12-31`;
 
-  const summary = db.prepare(`
-    SELECT
-      COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as income,
-      COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expense,
-      COALESCE(SUM(profit), 0) as profit
+  const summary = withSurplus(db.prepare(`
+    SELECT ${SUMMARY_SELECT}
     FROM transactions
     WHERE transaction_date >= ? AND transaction_date <= ?
-  `).get(yearStart, yearEnd);
+  `).get(yearStart, yearEnd));
 
   const rawMonthlyStats = db.prepare(`
     SELECT
       SUBSTR(transaction_date, 6, 2) as month,
-      COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as income,
-      COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expense,
-      COALESCE(SUM(CASE WHEN type='income' THEN profit ELSE 0 END), 0) as profit,
+      ${SUMMARY_SELECT},
       COUNT(id) as count
     FROM transactions
     WHERE transaction_date >= ? AND transaction_date <= ?
@@ -184,12 +185,20 @@ router.get('/yearly', (req, res) => {
   const monthlyStats = Array.from({ length: 12 }, (_, index) => {
     const month = index + 1;
     const row = monthlyByMonth.get(month);
-    return {
-      month,
-      label: `${month}月`,
+    const filled = withSurplus({
       income: row?.income || 0,
       expense: row?.expense || 0,
       profit: row?.profit || 0,
+      pure_income: row?.pure_income || 0,
+    });
+    return {
+      month,
+      label: `${month}月`,
+      income: filled.income,
+      expense: filled.expense,
+      profit: filled.profit,
+      pure_income: filled.pure_income,
+      surplus: filled.surplus,
       count: row?.count || 0,
     };
   });

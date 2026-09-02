@@ -164,6 +164,26 @@ input::placeholder {
   }
 }
 
+.page-keep-stage {
+  width: 100%;
+}
+
+.page-keep {
+  width: 100%;
+}
+
+.page-keep.is-inactive {
+  display: none;
+}
+
+.page-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  padding: var(--space-16) 0;
+}
+
 /* 通用卡片 */
 .card {
   background: var(--bg-card);
@@ -493,7 +513,10 @@ input::placeholder {
   width: 100%;
   max-width: 400px;
   text-align: center;
-  transform: rotate(-1deg);
+}
+
+.login-card:hover {
+  transform: none;
 }
 
 .login-title {
@@ -630,6 +653,30 @@ input::placeholder {
 .type-tab.active.expense { background: var(--expense-color); color: var(--text-inverse); }
 .type-tab.active.income { background: var(--income-color); color: var(--text-inverse); }
 
+.kind-tabs {
+  display: flex;
+  gap: var(--space-2);
+  background: var(--bg-hover);
+  padding: var(--space-1);
+  border-radius: var(--button-radius);
+}
+
+.kind-tab {
+  flex: 1;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--button-radius);
+  font-size: var(--text-sm);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.kind-tab.active.pure { background: var(--income-color); color: var(--text-inverse); }
+.kind-tab.active.business { background: var(--accent-blue); color: var(--text-inverse); }
+
+.form-group .kind-tabs + input {
+  margin-top: var(--space-3);
+}
+
 .add-form { display: flex; flex-direction: column; gap: var(--space-4); }
 .add-form textarea { resize: vertical; }
 
@@ -673,6 +720,20 @@ input::placeholder {
 .summary-info { display: flex; flex-direction: column; gap: var(--space-1); }
 .summary-label { font-size: var(--text-sm); color: var(--text-secondary); }
 .summary-info .amount { font-size: var(--text-xl); }
+
+.summary-dual {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+.summary-dual-sep {
+  color: var(--text-tertiary);
+  font-size: var(--text-lg);
+}
+
+.summary-info .summary-dual .amount { font-size: var(--text-lg); }
 
 .today-card h3 { margin-bottom: var(--space-3); }
 .today-row { display: flex; gap: var(--space-8); }

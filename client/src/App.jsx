@@ -1,14 +1,9 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { fetchMe } from './api';
 import Header from './components/Header';
+import KeepAliveRoutes from './components/KeepAliveRoutes';
 import Login from './pages/Login';
 import ChangePassword from './pages/ChangePassword';
-import Dashboard from './pages/Dashboard';
-import Transactions from './pages/Transactions';
-import Monthly from './pages/Monthly';
-import Yearly from './pages/Yearly';
-import Settings from './pages/Settings';
 import Toast from './components/Toast';
 
 export default function App() {
@@ -45,14 +40,7 @@ export default function App() {
     <div className="app-layout">
       <Header user={user} onLogout={() => setUser(null)} />
       <main className="main-content">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/transactions" element={<Transactions />} />
-          <Route path="/monthly" element={<Monthly />} />
-          <Route path="/yearly" element={<Yearly />} />
-          <Route path="/settings" element={<Settings user={user} onUserUpdate={setUser} />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <KeepAliveRoutes user={user} onUserUpdate={setUser} />
       </main>
       <Toast />
     </div>

@@ -44,7 +44,11 @@ export default function Dashboard() {
   useEffect(() => { loadData(); }, []);
 
   if (!summary) {
-    return <div className="loading-screen"><div className="loading-dots"><span></span><span></span><span></span></div></div>;
+    return (
+      <div className="page-loading">
+        <div className="loading-dots"><span></span><span></span><span></span></div>
+      </div>
+    );
   }
 
   // 趋势图数据
@@ -64,6 +68,22 @@ export default function Dashboard() {
         data: trend.data.map(t => t.expense),
         borderColor: '#E88B8B',
         backgroundColor: 'rgba(232,139,139,0.1)',
+        fill: true,
+        tension: 0.4,
+      },
+      {
+        label: '结余',
+        data: trend.data.map(t => t.surplus),
+        borderColor: '#E8B800',
+        backgroundColor: 'rgba(232,184,0,0.1)',
+        fill: true,
+        tension: 0.4,
+      },
+      {
+        label: '盈利',
+        data: trend.data.map(t => t.profit),
+        borderColor: '#6AAFE6',
+        backgroundColor: 'rgba(106,175,230,0.1)',
         fill: true,
         tension: 0.4,
       }
@@ -116,9 +136,15 @@ export default function Dashboard() {
         <div className="card summary-card">
           <div className="summary-icon profit"><DollarSign size={24} /></div>
           <div className="summary-info">
-            <span className="summary-label">本月净盈利</span>
-            <span className={`amount ${summary.month.profit >= 0 ? 'amount-income' : 'amount-expense'}`}>
-              {formatAmount(summary.month.profit)}
+            <span className="summary-label">本月结余 / 盈利</span>
+            <span className="summary-dual">
+              <span className={`amount ${summary.month.surplus >= 0 ? 'amount-income' : 'amount-expense'}`}>
+                {formatAmount(summary.month.surplus)}
+              </span>
+              <span className="summary-dual-sep">/</span>
+              <span className={`amount ${summary.month.profit >= 0 ? 'amount-income' : 'amount-expense'}`}>
+                {formatAmount(summary.month.profit)}
+              </span>
             </span>
           </div>
         </div>

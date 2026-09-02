@@ -2,6 +2,7 @@ const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
+const { runMigrations } = require('./migrate');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -51,13 +52,6 @@ function initDatabase() {
     )
   `);
 
-  // 兼容旧表：给 accounts 加 sort_order 列
-  const accountCols = db.prepare("PRAGMA table_info(accounts)").all();
-  if (!accountCols.some(c => c.name === 'sort_order')) {
-    db.exec('ALTER TABLE accounts ADD COLUMN sort_order INTEGER DEFAULT 0');
-    db.exec('UPDATE accounts SET sort_order = id');
-  }
-
   // 创建账目表
   db.exec(`
     CREATE TABLE IF NOT EXISTS transactions (
@@ -69,6 +63,7 @@ function initDatabase() {
       amount REAL NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
       profit REAL DEFAULT 0,
+      income_kind TEXT CHECK(income_kind IN ('pure', 'business')),
       transaction_date DATETIME NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -76,6 +71,8 @@ function initDatabase() {
       FOREIGN KEY (account_id) REFERENCES accounts(id)
     )
   `);
+
+  runMigrations(db);
 
   // 创建索引
   db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)');

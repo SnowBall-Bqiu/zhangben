@@ -106,9 +106,15 @@ export default function Monthly() {
                 <span style={{ fontSize: 24 }}>¥</span>
               </div>
               <div className="summary-info">
-                <span className="summary-label">本月结余</span>
-                <span className={`amount ${data.summary.profit >= 0 ? 'amount-income' : 'amount-expense'}`}>
-                  {formatAmount(data.summary.profit)}
+                <span className="summary-label">本月结余 / 盈利</span>
+                <span className="summary-dual">
+                  <span className={`amount ${data.summary.surplus >= 0 ? 'amount-income' : 'amount-expense'}`}>
+                    {formatAmount(data.summary.surplus)}
+                  </span>
+                  <span className="summary-dual-sep">/</span>
+                  <span className={`amount ${data.summary.profit >= 0 ? 'amount-income' : 'amount-expense'}`}>
+                    {formatAmount(data.summary.profit)}
+                  </span>
                 </span>
               </div>
             </div>

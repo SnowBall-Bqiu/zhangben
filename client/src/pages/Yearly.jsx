@@ -70,9 +70,15 @@ export default function Yearly() {
             <div className="card summary-card">
               <div className="summary-icon profit"><DollarSign size={24} /></div>
               <div className="summary-info">
-                <span className="summary-label">全年结余</span>
-                <span className={`amount ${data.summary.profit >= 0 ? 'amount-income' : 'amount-expense'}`}>
-                  {formatAmount(data.summary.profit)}
+                <span className="summary-label">全年结余 / 盈利</span>
+                <span className="summary-dual">
+                  <span className={`amount ${data.summary.surplus >= 0 ? 'amount-income' : 'amount-expense'}`}>
+                    {formatAmount(data.summary.surplus)}
+                  </span>
+                  <span className="summary-dual-sep">/</span>
+                  <span className={`amount ${data.summary.profit >= 0 ? 'amount-income' : 'amount-expense'}`}>
+                    {formatAmount(data.summary.profit)}
+                  </span>
                 </span>
               </div>
             </div>
@@ -115,7 +121,7 @@ export default function Yearly() {
                   <div className="year-month-values">
                     <span className="amount-income">入 {formatAmount(m.income)}</span>
                     <span className="amount-expense">出 {formatAmount(m.expense)}</span>
-                    <span>结 {formatAmount(m.income - m.expense)}</span>
+                    <span>结 {formatAmount(m.surplus)}</span>
                   </div>
                 </div>
               ))}

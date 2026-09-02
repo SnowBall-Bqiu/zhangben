@@ -3,17 +3,11 @@ name: Docker Release
 # 需要在 Gitea 仓库中配置的变量和密钥：
 # 仓库变量（Variables）：
 # - ALIYUN_REGISTRY_USERNAME：阿里云容器镜像服务 ACR 用户名
-# - ENABLE_PUSH_BUILD：是否在每次分支提交时构建镜像，设置为 true 时启用
 # 仓库密钥（Secrets）：
 # - ALIYUN_REGISTRY_PASSWORD：阿里云容器镜像服务 ACR 登录密码
 # - ALIYUN_REGISTRY_USERNAME：可选；未配置变量 ALIYUN_REGISTRY_USERNAME 时作为兜底用户名
 
 on:
-  push:
-    branches:
-      - "**"
-    tags:
-      - "**"
   release:
     types: [published]
 
@@ -24,18 +18,12 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') || vars.ENABLE_PUSH_BUILD == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set image tag
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = "release" ] || [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
-            echo "IMAGE_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
-          else
-            echo "IMAGE_TAG=${GITHUB_SHA}" >> "$GITHUB_ENV"
-          fi
+        run: echo "IMAGE_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
 
       - name: Login to Aliyun registry
         env:
@@ -57,7 +45,6 @@ jobs:
           docker info
 
       - name: Build and push Docker image
-        if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') }}
         run: |
           docker build \
             -t "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG" \
@@ -65,9 +52,3 @@ jobs:
             .
           docker push "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
           docker push "$REGISTRY/$IMAGE_NAME:latest"
-
-      - name: Build and push Docker image for commit
-        if: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') }}
-        run: |
-          docker build -t "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG" .
-          docker push "$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
