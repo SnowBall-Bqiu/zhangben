@@ -1,6 +1,27 @@
 const BASE = '/api';
 let cachedCsrfToken = null;
 let csrfPromise = null;
+let sessionGeneration = 0;
+let authenticated = false;
+const sessionExpiredListeners = new Set();
+
+export function subscribeToSessionExpired(listener) {
+  sessionExpiredListeners.add(listener);
+  return () => sessionExpiredListeners.delete(listener);
+}
+
+function advanceSession(isAuthenticated) {
+  sessionGeneration += 1;
+  authenticated = isAuthenticated;
+  cachedCsrfToken = null;
+  csrfPromise = null;
+}
+
+function ensureCurrentSession(generation) {
+  if (generation !== sessionGeneration) {
+    throw new Error('会话已变更，请重试');
+  }
+}
 
 async function parseResponse(res) {
   const text = await res.text();
@@ -16,19 +37,25 @@ async function fetchCsrfToken(force = false) {
   if (cachedCsrfToken && !force) return cachedCsrfToken;
   if (csrfPromise && !force) return csrfPromise;
 
-  csrfPromise = fetch(`${BASE}/auth/csrf`, { credentials: 'same-origin' })
+  const generation = sessionGeneration;
+  const pending = fetch(`${BASE}/auth/csrf`, { credentials: 'same-origin' })
     .then(async res => {
       const data = await parseResponse(res);
+      ensureCurrentSession(generation);
       if (!res.ok) throw new Error(data.message || '获取安全令牌失败');
       cachedCsrfToken = data.csrfToken;
       return cachedCsrfToken;
     })
-    .finally(() => { csrfPromise = null; });
+    .finally(() => {
+      if (csrfPromise === pending) csrfPromise = null;
+    });
 
-  return csrfPromise;
+  csrfPromise = pending;
+  return pending;
 }
 
 async function request(url, options = {}, retrying = false) {
+  const generation = sessionGeneration;
   const method = (options.method || 'GET').toUpperCase();
   const headers = { ...(options.headers || {}) };
 
@@ -36,6 +63,7 @@ async function request(url, options = {}, retrying = false) {
     headers['Content-Type'] = headers['Content-Type'] || 'application/json';
     headers['X-CSRF-Token'] = await fetchCsrfToken();
   }
+  ensureCurrentSession(generation);
 
   const res = await fetch(`${BASE}${url}`, {
     ...options,
@@ -45,6 +73,21 @@ async function request(url, options = {}, retrying = false) {
   });
 
   const data = await parseResponse(res);
+  // Responses started before logout, reauthentication, or password rotation must
+  // not restore a previous user's profile or overwrite the current CSRF token.
+  ensureCurrentSession(generation);
+
+  if (res.status === 401 && authenticated && url !== '/auth/login') {
+    advanceSession(false);
+    sessionExpiredListeners.forEach(listener => listener());
+    throw new Error(data.message || '会话已失效，请重新登录');
+  }
+
+  if (res.ok && ['/auth/login', '/auth/change-password', '/auth/logout'].includes(url)) {
+    advanceSession(url !== '/auth/logout');
+  } else if (res.ok && url === '/auth/me') {
+    authenticated = true;
+  }
   if (data.csrfToken) cachedCsrfToken = data.csrfToken;
 
   if (!res.ok && data.code === 'CSRF_INVALID' && !retrying) {

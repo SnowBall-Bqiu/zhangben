@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { login } from '../api';
 import { showToast } from '../components/Toast';
+import { MAX_PASSWORD_BYTES, passwordByteLength } from '../utils/password';
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -11,6 +12,10 @@ export default function Login({ onLogin }) {
     e.preventDefault();
     if (!username.trim() || !password) {
       showToast('请输入用户名和密码', 'error');
+      return;
+    }
+    if (passwordByteLength(password) > MAX_PASSWORD_BYTES) {
+      showToast(`密码不能超过${MAX_PASSWORD_BYTES}个 UTF-8 字节`, 'error');
       return;
     }
     setLoading(true);

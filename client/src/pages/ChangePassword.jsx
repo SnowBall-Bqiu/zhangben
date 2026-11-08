@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { changePassword, fetchMe } from '../api';
 import { showToast } from '../components/Toast';
+import { MAX_PASSWORD_BYTES, PASSWORD_REQUIREMENTS, passwordByteLength, validateNewPassword } from '../utils/password';
 
 export default function ChangePassword({ onDone }) {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -14,8 +15,13 @@ export default function ChangePassword({ onDone }) {
       showToast('请输入当前密码', 'error');
       return;
     }
-    if (newPassword.length < 6) {
-      showToast('密码长度不能少于6位', 'error');
+    if (passwordByteLength(currentPassword) > MAX_PASSWORD_BYTES) {
+      showToast(`当前密码不能超过${MAX_PASSWORD_BYTES}个 UTF-8 字节`, 'error');
+      return;
+    }
+    const passwordError = validateNewPassword(newPassword, currentPassword);
+    if (passwordError) {
+      showToast(passwordError, 'error');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -57,7 +63,7 @@ export default function ChangePassword({ onDone }) {
               type="password"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
-              placeholder="至少6位"
+              placeholder={PASSWORD_REQUIREMENTS}
             />
           </div>
           <div className="form-group">

@@ -1,5 +1,6 @@
 const express = require('express');
 const {
+  createValidationError,
   validateType,
   validateName,
   validateOptionalText,
@@ -7,6 +8,7 @@ const {
   parseOptionalPositiveInteger,
   parsePageLimit,
   parseAmount,
+  parseBalanceAmount,
   validateDate,
   escapeLike,
 } = require('../utils/validation');
@@ -28,9 +30,22 @@ function csvSafe(val) {
 
 function parseOptionalProfit(value) {
   if (value == null || value === '') return 0;
-  const normalized = String(value).trim();
-  if (/^0(?:\.0{1,2})?$/.test(normalized)) return 0;
-  return parseAmount(value, '盈利金额');
+  return parseBalanceAmount(value, '盈亏金额');
+}
+
+function getBusinessProfit(body, amount) {
+  if (!Object.prototype.hasOwnProperty.call(body, 'cost')) {
+    return parseOptionalProfit(body.profit);
+  }
+
+  if (!['string', 'number'].includes(typeof body.cost)) {
+    throw createValidationError('成本金额必须是最多两位小数的非负金额');
+  }
+  const cost = parseBalanceAmount(body.cost, '成本金额');
+  if (cost < 0) throw createValidationError('成本金额不能为负');
+
+  // Amounts are validated to two decimal places; subtract integer cents, not floats.
+  return (Math.round(amount * 100) - Math.round(cost * 100)) / 100;
 }
 
 function getTransactionPayload(db, body) {
@@ -41,7 +56,7 @@ function getTransactionPayload(db, body) {
     ? validateType(body.income_kind, INCOME_KINDS, '收入类型')
     : null;
   const profit = type === 'income' && incomeKind === 'business'
-    ? parseOptionalProfit(body.profit)
+    ? getBusinessProfit(body, amount)
     : 0;
   const transactionDate = validateDate(body.transaction_date);
   const note = validateOptionalText(body.note, '备注', 500);
@@ -122,14 +137,42 @@ router.get('/', (req, res) => {
 // GET /api/transactions/export - 导出CSV
 router.get('/export', (req, res) => {
   const db = req.app.get('db');
+  const { year, month } = req.query;
+  let where = '';
+  const params = [];
+  let filename = 'transactions.csv';
+
+  // Only an absent date filter means a full export; invalid filters must fail closed.
+  if (year !== undefined || month !== undefined) {
+    if (typeof year !== 'string' || typeof month !== 'string') {
+      throw createValidationError('请同时提供年份和月份');
+    }
+    const yearNum = parsePositiveInteger(year, '年份');
+    const monthNum = parsePositiveInteger(month, '月份');
+    if (yearNum < 1970 || yearNum > 2100) {
+      throw createValidationError('年份必须在 1970 到 2100 之间');
+    }
+    if (monthNum > 12) {
+      throw createValidationError('月份必须在 1 到 12 之间');
+    }
+
+    const monthStr = String(monthNum).padStart(2, '0');
+    const nextYear = monthNum === 12 ? yearNum + 1 : yearNum;
+    const nextMonth = String(monthNum === 12 ? 1 : monthNum + 1).padStart(2, '0');
+    where = 'WHERE t.transaction_date >= ? AND t.transaction_date < ?';
+    params.push(`${yearNum}-${monthStr}-01`, `${nextYear}-${nextMonth}-01`);
+    filename = `transactions-${yearNum}-${monthStr}.csv`;
+  }
+
   const rows = db.prepare(`
     SELECT t.name, t.amount, t.type, t.profit, t.income_kind, t.note, t.transaction_date,
            c.name as category_name, a.name as account_name
     FROM transactions t
     LEFT JOIN categories c ON t.category_id = c.id
     LEFT JOIN accounts a ON t.account_id = a.id
+    ${where}
     ORDER BY t.transaction_date DESC
-  `).all();
+  `).all(...params);
 
   const BOM = '\uFEFF';
   const header = '名称,金额,类型,收入类型,盈亏,分类,账户,备注,日期\n';
@@ -138,7 +181,7 @@ router.get('/export', (req, res) => {
   ).join('\n');
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename=transactions.csv');
+  res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
   res.send(BOM + header + csv);
 });
 

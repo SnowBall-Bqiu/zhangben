@@ -3,6 +3,7 @@ import { User, Key, Tags, WalletCards, Plus, Trash2, GripVertical, X, Check } fr
 import { updateProfile, changePassword, fetchCategories, createCategory, updateCategory, deleteCategory, reorderCategories, fetchAccounts, createAccount, updateAccount, deleteAccount, reorderAccounts } from '../api';
 import { showToast } from '../components/Toast';
 import { formatAmount } from '../utils/format';
+import { MAX_PASSWORD_BYTES, PASSWORD_REQUIREMENTS, passwordByteLength, validateNewPassword } from '../utils/password';
 
 export default function Settings({ user, onUserUpdate }) {
   const [activeTab, setActiveTab] = useState('profile');
@@ -83,7 +84,9 @@ function PasswordSettings() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!currentPassword) { showToast('请输入当前密码', 'error'); return; }
-    if (newPassword.length < 6) { showToast('密码长度不能少于6位', 'error'); return; }
+    if (passwordByteLength(currentPassword) > MAX_PASSWORD_BYTES) { showToast(`当前密码不能超过${MAX_PASSWORD_BYTES}个 UTF-8 字节`, 'error'); return; }
+    const passwordError = validateNewPassword(newPassword, currentPassword);
+    if (passwordError) { showToast(passwordError, 'error'); return; }
     if (newPassword !== confirmPassword) { showToast('两次输入的密码不一致', 'error'); return; }
     setLoading(true);
     try {
@@ -107,7 +110,7 @@ function PasswordSettings() {
         </div>
         <div className="form-group">
           <label>新密码</label>
-          <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="至少6位" />
+          <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder={PASSWORD_REQUIREMENTS} />
         </div>
         <div className="form-group">
           <label>确认新密码</label>

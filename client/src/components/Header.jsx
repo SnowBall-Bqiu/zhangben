@@ -1,18 +1,27 @@
+import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Sun, Moon, Home, Receipt, CalendarDays, CalendarRange, Settings, LogOut } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { logout } from '../api';
+import { showToast } from './Toast';
 
 export default function Header({ user, onLogout }) {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
     try {
       await logout();
-    } catch {}
-    onLogout();
-    navigate('/');
+      onLogout();
+      navigate('/');
+    } catch {
+      showToast('退出登录未完成，请重试', 'error');
+    } finally {
+      setLoggingOut(false);
+    }
   };
 
   return (
@@ -47,7 +56,7 @@ export default function Header({ user, onLogout }) {
           <button className="theme-toggle" onClick={toggleTheme} title={theme === 'light' ? '切换深色模式' : '切换浅色模式'}>
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
           </button>
-          <button className="btn-logout" onClick={handleLogout} title="退出登录">
+          <button className="btn-logout" onClick={handleLogout} disabled={loggingOut} title={loggingOut ? '退出登录中...' : '退出登录'}>
             <LogOut size={18} />
           </button>
         </div>

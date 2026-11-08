@@ -99,7 +99,7 @@ export default function Transactions() {
                     {t.category_name && `${t.category_name} · `}
                     {t.account_name && `${t.account_name} · `}
                     {formatDate(t.transaction_date)}
-                    {t.type === 'income' && t.profit > 0 && <span className="profit-note"> · 盈利{formatAmount(t.profit)}</span>}
+                    {t.type === 'income' && Math.abs(t.profit) > 0 && <span className={t.profit < 0 ? 'amount-expense' : 'profit-note'}> · {t.profit < 0 ? '亏损' : '盈利'}{formatAmount(Math.abs(t.profit))}</span>}
                   </span>
                 </div>
                 <span className={`amount ${t.type === 'income' ? 'amount-income' : 'amount-expense'}`}>

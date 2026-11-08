@@ -1,46 +1,36 @@
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
+const http = require('http');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const { readSecurityConfig } = require('./utils/security-config');
+// Validate deployment settings before initializing or changing a database.
+const securityConfig = readSecurityConfig();
 const { initDatabase, DB_PATH, DATA_DIR } = require('./database/init');
 const Database = require('better-sqlite3');
 const BetterSqlite3Store = require('./middleware/session-store');
 const securityHeaders = require('./middleware/security-headers');
 const { csrfMiddleware } = require('./middleware/csrf');
-
-// 初始化数据库
-initDatabase();
+const { requireJsonBodyForApiWrites, jsonBodyParser, configureProxyTrust, apiNoStore, enforcePublicAccess } = require('./middleware/request-security');
+const { createApiRateLimit } = require('./middleware/api-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
-const mutatingMethods = new Set(['POST', 'PUT', 'PATCH']);
-
-function envFlag(name, defaultValue = false) {
-  const value = process.env[name];
-  if (value === undefined) return defaultValue;
-  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
-}
 
 app.disable('x-powered-by');
+configureProxyTrust(app, securityConfig.trustedProxies);
 
-function requireJsonBodyForApiWrites(req, res, next) {
-  if (!req.path.startsWith('/api/') || !mutatingMethods.has(req.method)) {
-    return next();
-  }
-
-  if (req.is('application/json') || req.is('application/*+json')) {
-    return next();
-  }
-
-  return res.status(415).json({ error: true, message: '写接口仅接受 JSON 请求' });
-}
+// Initialize only after deployment and proxy settings have been validated.
+initDatabase();
 
 // 中间件
 app.use(securityHeaders);
-app.use(requireJsonBodyForApiWrites);
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use('/api', apiNoStore);
+app.use(enforcePublicAccess(securityConfig));
+app.use('/api', createApiRateLimit());
+app.use('/api/auth/csrf', createApiRateLimit({ windowMs: 5 * 60000, maxRequests: 20 }));
+app.use('/api', requireJsonBodyForApiWrites, jsonBodyParser);
 
 app.use((err, req, res, next) => {
   if (err && (err.type === 'entity.parse.failed' || err instanceof SyntaxError)) {
@@ -50,23 +40,15 @@ app.use((err, req, res, next) => {
 });
 
 // Session 配置
-const nodeEnv = process.env.NODE_ENV || 'production';
-const isProduction = nodeEnv === 'production';
-const secureSessionCookie = envFlag('SESSION_COOKIE_SECURE', false);
-if (isProduction) {
-  if (!process.env.SESSION_SECRET) {
-    throw new Error('生产环境必须设置 SESSION_SECRET');
-  }
-  app.set('trust proxy', 1);
-}
+const secureSessionCookie = securityConfig.secureCookie;
 app.use(session({
   name: secureSessionCookie ? '__Host-zhangben.sid' : 'zhangben.sid',
   store: new BetterSqlite3Store({ dbPath: path.join(DATA_DIR, 'sessions.db') }),
-  secret: process.env.SESSION_SECRET || 'zhangben-dev-secret-change-in-production',
+  secret: securityConfig.sessionSecret,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7天
+    maxAge: 8 * 60 * 60 * 1000, // 8 小时，鉴权另有空闲和绝对过期检查
     httpOnly: true,
     sameSite: 'lax',
     secure: secureSessionCookie,
@@ -136,10 +118,26 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ error: true, message: err.message || '参数错误' });
   }
 
+  if (err && err.status === 415) {
+    return res.status(415).json({ error: true, message: '不支持该请求编码或内容类型' });
+  }
+
+  if (err && err.status === 413) {
+    return res.status(413).json({ error: true, message: '请求内容过大' });
+  }
+
   console.error('服务器错误:', err);
   res.status(500).json({ error: true, message: '服务器内部错误' });
 });
 
-app.listen(PORT, HOST, () => {
+const server = http.createServer({
+  headersTimeout: 10000,
+  requestTimeout: 15000,
+  keepAliveTimeout: 5000,
+  maxHeaderSize: 16384,
+}, app);
+server.maxRequestsPerSocket = 1000;
+server.maxConnections = 256;
+server.listen(PORT, HOST, () => {
   console.log(`雪球账本服务已启动: http://${HOST}:${PORT}`);
 });

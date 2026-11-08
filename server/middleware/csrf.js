@@ -8,11 +8,8 @@ function ensureCsrfToken(session) {
 }
 
 function shouldValidateCsrf(req) {
-  const path = req.originalUrl.split('?')[0];
-  if (!path.startsWith('/api/')) return false;
-  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return false;
-  if (path === '/api/auth/csrf') return false;
-  return true;
+  // This middleware is mounted on /api; do not reclassify the original URL.
+  return !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
 }
 
 function csrfMiddleware(req, res, next) {

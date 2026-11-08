@@ -1,51 +1,50 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { ensureCsrfToken, issueCsrfToken } = require('../middleware/csrf');
+const { issueCsrfToken } = require('../middleware/csrf');
+const { requireSession, rejectSession, regenerateAuthenticatedSession } = require('../middleware/auth-session');
 const { validateOptionalText } = require('../utils/validation');
+const { passwordInputError, newPasswordError } = require('../utils/password-policy');
 const router = express.Router();
 
-// 简单的内存限流：每个IP 5分钟内最多5次登录尝试
-const loginAttempts = new Map();
+// 同时限制 IP 和用户名，避免轮换来源地址绕过登录尝试限制。
+const attemptsByApp = new WeakMap();
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 5 * 60 * 1000;
+const MAX_RATE_LIMIT_KEYS = 10000;
 
-function checkRateLimit(ip) {
-  const now = Date.now();
-  const record = loginAttempts.get(ip);
-  if (!record || now - record.start > WINDOW_MS) {
-    loginAttempts.set(ip, { start: now, count: 1 });
-    return true;
+function rateLimits(req) {
+  if (!attemptsByApp.has(req.app)) {
+    attemptsByApp.set(req.app, { ips: new Map(), usernames: new Map(), passwordChanges: new Map() });
   }
-  record.count++;
-  return record.count <= MAX_ATTEMPTS;
+  return attemptsByApp.get(req.app);
 }
 
-function destroySession(req, res, statusCode, message) {
-  if (!req.session) {
-    return res.status(statusCode).json({ error: true, message });
+function checkRateLimit(records, key) {
+  const now = Date.now();
+  // Records retain insertion order because windows do not slide on subsequent attempts.
+  for (const [oldKey, oldRecord] of records) {
+    if (now - oldRecord.start < WINDOW_MS) break;
+    records.delete(oldKey);
   }
-
-  req.session.destroy(() => {
-    res.status(statusCode).json({ error: true, message });
-  });
+  const record = records.get(key);
+  if (!record) {
+    // Never evict an active record: filling the map must not reset an existing limit.
+    if (records.size >= MAX_RATE_LIMIT_KEYS) return false;
+    records.set(key, { start: now, count: 1 });
+    return true;
+  }
+  record.count = Math.min(record.count + 1, MAX_ATTEMPTS + 1);
+  return record.count <= MAX_ATTEMPTS;
 }
 
 // GET /api/auth/csrf
 router.get('/csrf', issueCsrfToken);
 
-// 定期清理过期记录
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, record] of loginAttempts) {
-    if (now - record.start > WINDOW_MS) loginAttempts.delete(ip);
-  }
-}, WINDOW_MS);
-
 // POST /api/auth/login
 router.post('/login', (req, res) => {
-  const { username, password } = req.body;
+  const { username, password } = req.body || {};
   const loginUsername = String(username || '').trim();
-  if (!loginUsername || !password) {
+  if (!loginUsername || typeof password !== 'string' || !password) {
     return res.status(400).json({ error: true, message: '请输入用户名和密码' });
   }
 
@@ -53,7 +52,15 @@ router.post('/login', (req, res) => {
     return res.status(400).json({ error: true, message: '用户名格式不正确' });
   }
 
-  if (!checkRateLimit(req.ip)) {
+  const passwordError = passwordInputError(password);
+  if (passwordError) {
+    return res.status(400).json({ error: true, message: passwordError });
+  }
+
+  const limits = rateLimits(req);
+  const ipAllowed = checkRateLimit(limits.ips, req.ip);
+  const usernameAllowed = checkRateLimit(limits.usernames, loginUsername);
+  if (!ipAllowed || !usernameAllowed) {
     return res.status(429).json({ error: true, message: '登录尝试过于频繁，请5分钟后再试' });
   }
 
@@ -68,20 +75,30 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: true, message: '用户名或密码错误' });
   }
 
-  req.session.regenerate(err => {
+  // Let owners migrate older short passwords without allowing weak credentials into business routes.
+  if (newPasswordError(password) && !user.must_change_password) {
+    const result = db.prepare(`
+      UPDATE users SET must_change_password = 1 WHERE id = ? AND password_hash = ?
+    `).run(user.id, user.password_hash);
+    if (result.changes !== 1) return rejectSession(req, res);
+    user.must_change_password = 1;
+  }
+
+  regenerateAuthenticatedSession(req, user, (err, csrfToken) => {
     if (err) {
       return res.status(500).json({ error: true, message: '服务器内部错误' });
     }
-
-    req.session.userId = user.id;
-    req.session.username = user.username;
-    const csrfToken = ensureCsrfToken(req.session);
 
     res.json({
       message: '登录成功',
       mustChangePassword: user.must_change_password === 1,
       csrfToken,
-      user: { id: user.id, username: user.username, nickname: user.nickname }
+      user: {
+        id: user.id,
+        username: user.username,
+        nickname: user.nickname,
+        mustChangePassword: user.must_change_password === 1
+      }
     });
   });
 });
@@ -92,55 +109,61 @@ router.post('/logout', (req, res) => {
     return res.json({ message: '已退出登录' });
   }
 
-  req.session.destroy(() => {
+  req.session.destroy(err => {
+    if (err) {
+      return res.status(500).json({ error: true, message: '退出登录失败，请重试' });
+    }
     res.json({ message: '已退出登录' });
   });
 });
 
 // POST /api/auth/change-password
-router.post('/change-password', (req, res) => {
-  if (!req.session || !req.session.userId) {
-    return res.status(401).json({ error: true, message: '请先登录' });
-  }
-
+router.post('/change-password', requireSession, (req, res) => {
   const currentPasswordText = typeof req.body.currentPassword === 'string' ? req.body.currentPassword : '';
   const newPasswordText = typeof req.body.newPassword === 'string' ? req.body.newPassword : '';
   if (!currentPasswordText || !newPasswordText) {
     return res.status(400).json({ error: true, message: '请输入当前密码和新密码' });
   }
 
-  if (newPasswordText.length < 6) {
-    return res.status(400).json({ error: true, message: '密码长度不能少于6位' });
+  const passwordError = passwordInputError(currentPasswordText) || newPasswordError(newPasswordText);
+  if (passwordError) {
+    return res.status(400).json({ error: true, message: passwordError });
   }
 
   const db = req.app.get('db');
-  const user = db.prepare('SELECT id, password_hash FROM users WHERE id = ?').get(req.session.userId);
-  if (!user) {
-    return destroySession(req, res, 401, '会话已失效，请重新登录');
+  const user = req.authUser;
+  if (!checkRateLimit(rateLimits(req).passwordChanges, user.id)) {
+    return res.status(429).json({ error: true, message: '密码修改尝试过于频繁，请5分钟后再试' });
   }
 
   if (!bcrypt.compareSync(currentPasswordText, user.password_hash)) {
     return res.status(400).json({ error: true, message: '当前密码不正确' });
   }
 
-  const hash = bcrypt.hashSync(newPasswordText, 10);
-  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(hash, req.session.userId);
+  if (newPasswordText === currentPasswordText) {
+    return res.status(400).json({ error: true, message: '新密码不能与当前密码相同' });
+  }
 
-  res.json({ message: '密码修改成功' });
+  const hash = bcrypt.hashSync(newPasswordText, 10);
+  const result = db.prepare(`
+    UPDATE users SET password_hash = ?, must_change_password = 0, session_version = session_version + 1
+    WHERE id = ? AND session_version = ?
+  `).run(hash, user.id, user.session_version);
+  if (result.changes !== 1) return rejectSession(req, res);
+
+  regenerateAuthenticatedSession(req, { ...user, session_version: user.session_version + 1 }, (err, csrfToken) => {
+    if (err) {
+      return res.status(500).json({ error: true, message: '密码已修改，请重新登录' });
+    }
+    return res.json({ message: '密码修改成功', csrfToken });
+  });
 });
 
 // PUT /api/auth/profile - 修改用户名
-router.put('/profile', (req, res) => {
-  if (!req.session || !req.session.userId) {
-    return res.status(401).json({ error: true, message: '请先登录' });
-  }
-
+router.put('/profile', requireSession, (req, res) => {
   const { username, nickname } = req.body;
   const db = req.app.get('db');
-  const user = db.prepare('SELECT id, must_change_password FROM users WHERE id = ?').get(req.session.userId);
-  if (!user) {
-    return destroySession(req, res, 401, '会话已失效，请重新登录');
-  }
+  const user = req.authUser;
 
   if (user.must_change_password) {
     return res.status(403).json({ error: true, message: '请先修改密码', mustChangePassword: true });
@@ -171,7 +194,7 @@ router.put('/profile', (req, res) => {
 
   const updatedUser = db.prepare('SELECT id, username, nickname, must_change_password, created_at FROM users WHERE id = ?').get(req.session.userId);
   if (!updatedUser) {
-    return destroySession(req, res, 401, '会话已失效，请重新登录');
+    return rejectSession(req, res);
   }
 
   res.json({
@@ -187,16 +210,8 @@ router.put('/profile', (req, res) => {
 });
 
 // GET /api/auth/me
-router.get('/me', (req, res) => {
-  if (!req.session || !req.session.userId) {
-    return res.status(401).json({ error: true, message: '请先登录' });
-  }
-
-  const db = req.app.get('db');
-  const user = db.prepare('SELECT id, username, nickname, must_change_password, created_at FROM users WHERE id = ?').get(req.session.userId);
-  if (!user) {
-    return destroySession(req, res, 401, '会话已失效，请重新登录');
-  }
+router.get('/me', requireSession, (req, res) => {
+  const user = req.authUser;
 
   res.json({
     user: {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchMe } from './api';
+import { fetchMe, subscribeToSessionExpired } from './api';
 import Header from './components/Header';
 import KeepAliveRoutes from './components/KeepAliveRoutes';
 import Login from './pages/Login';
@@ -30,10 +30,18 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
+    const unsubscribe = subscribeToSessionExpired(() => {
+      if (active) setUser(null);
+    });
     fetchMe()
-      .then(data => setUser(data.user))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+      .then(data => { if (active) setUser(data.user); })
+      .catch(() => { if (active) setUser(null); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   if (loading) {

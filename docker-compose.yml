@@ -1,11 +1,27 @@
 services:
   zhangben:
-    image: registry.cn-hangzhou.aliyuncs.com/bqiu/zhangben:1.0
+    build:
+      context: .
+      target: runtime
+    image: zhangben:local
     container_name: zhangben
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      DATA_DIR: /app/data
+      SESSION_COOKIE_SECURE: "true"
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     ports:
-      - "${PORT:-3000}:${PORT:-3000}"
+      - "127.0.0.1:${PORT:-3000}:3000"
     volumes:
       - ./data:/app/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true

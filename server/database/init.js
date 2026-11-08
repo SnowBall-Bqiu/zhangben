@@ -2,16 +2,28 @@ const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { runMigrations } = require('./migrate');
+const { newPasswordError } = require('../utils/password-policy');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
-fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const DB_PATH = path.join(DATA_DIR, 'zhangben.db');
 
-function initDatabase() {
-  const db = new Database(DB_PATH);
+function initDatabase({ dbPath = DB_PATH } = {}) {
+  if (dbPath !== ':memory:') {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  }
+  const db = new Database(dbPath);
+  try {
+    initializeDatabaseContents(db);
+  } finally {
+    db.close();
+  }
+  console.log('数据库初始化完成');
+}
 
+function initializeDatabaseContents(db) {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
@@ -23,6 +35,7 @@ function initDatabase() {
       password_hash TEXT NOT NULL,
       nickname TEXT,
       must_change_password INTEGER DEFAULT 1,
+      session_version INTEGER NOT NULL DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -79,12 +92,27 @@ function initDatabase() {
   db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id)');
 
-  // 插入默认用户 admin/123456
-  const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
-  if (!existingUser) {
-    const hash = bcrypt.hashSync('123456', 10);
+  // 只在空用户表中创建首个管理员；修改用户名后不得重新生成账号。
+  const initialUser = db.transaction(() => {
+    if (db.prepare('SELECT id FROM users LIMIT 1').get()) return null;
+
+    const configuredPassword = process.env.INITIAL_ADMIN_PASSWORD;
+    const generated = !configuredPassword;
+    const password = generated ? crypto.randomBytes(24).toString('base64url') : configuredPassword;
+    const passwordError = newPasswordError(password);
+    if (passwordError) throw new Error(`INITIAL_ADMIN_PASSWORD: ${passwordError}`);
+
+    const hash = bcrypt.hashSync(password, 10);
     db.prepare('INSERT INTO users (username, password_hash, nickname, must_change_password) VALUES (?, ?, ?, ?)').run('admin', hash, '管理员', 1);
-    console.log('默认用户 admin/123456 创建成功');
+    return { generated, password };
+  }).immediate();
+
+  if (initialUser) {
+    if (initialUser.generated) {
+      console.log(`首次管理员 admin 已创建，临时密码：${initialUser.password}。首次登录后必须修改密码。`);
+    } else {
+      console.log('首次管理员 admin 已创建，使用 INITIAL_ADMIN_PASSWORD。首次登录后必须修改密码。');
+    }
   }
 
   // 插入默认支出分类
@@ -143,9 +171,6 @@ function initDatabase() {
     }
     console.log('默认账户种子数据插入成功');
   }
-
-  db.close();
-  console.log('数据库初始化完成');
 }
 
 // 直接运行时初始化

@@ -692,9 +692,9 @@ input::placeholder {
 .kind-tab.active.pure { background: var(--income-color); color: var(--text-inverse); }
 .kind-tab.active.business { background: var(--accent-blue); color: var(--text-inverse); }
 
-.form-group .kind-tabs + input {
-  margin-top: var(--space-3);
-}
+.business-fields { display: flex; flex-direction: column; gap: var(--space-1); }
+.business-fields .label-hint { margin: 0; }
+.business-profit[readonly] { background: var(--bg-hover); }
 
 .add-form { display: flex; flex-direction: column; gap: var(--space-4); }
 .add-form textarea { resize: vertical; }

@@ -1,17 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { X, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { createTransaction, updateTransaction, fetchCategories, fetchAccounts } from '../api';
 import { showToast } from './Toast';
-
-function resolveIncomeKind(editData) {
-  if (editData?.type !== 'income') return 'pure';
-  if (editData.income_kind === 'business' || editData.income_kind === 'pure') {
-    return editData.income_kind;
-  }
-  return editData.profit > 0 ? 'business' : 'pure';
-}
+import { calculateBusinessProfit, moneyToCents, resolveIncomeKind, restoreBusinessCost } from '../utils/business-profit';
 
 export default function AddRecord({ onClose, onSuccess, editData }) {
+  const formId = useId();
   const [type, setType] = useState(editData?.type || 'expense');
   const [name, setName] = useState(editData?.name || '');
   const [amount, setAmount] = useState(editData?.amount?.toString() || '');
@@ -19,9 +13,8 @@ export default function AddRecord({ onClose, onSuccess, editData }) {
   const [accountId, setAccountId] = useState(editData?.account_id?.toString() || '');
   const [note, setNote] = useState(editData?.note || '');
   const [incomeKind, setIncomeKind] = useState(resolveIncomeKind(editData));
-  const [profit, setProfit] = useState(
-    editData?.type === 'income' && editData?.profit > 0 ? editData.profit.toString() : ''
-  );
+  const [cost, setCost] = useState(() => restoreBusinessCost(editData));
+  const profit = calculateBusinessProfit(amount, cost);
   const [date, setDate] = useState(editData?.transaction_date?.slice(0, 10) || new Date().toISOString().slice(0, 10));
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
@@ -34,22 +27,29 @@ export default function AddRecord({ onClose, onSuccess, editData }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !amount || parseFloat(amount) <= 0) {
+    if (!name.trim() || !amount) {
       showToast('请填写名称和金额', 'error');
       return;
     }
-    if (type === 'income' && incomeKind === 'business' && profit && parseFloat(profit) < 0) {
-      showToast('盈利金额不能为负', 'error');
+    const amountCents = moneyToCents(amount);
+    if (amountCents === null || amountCents <= 0) {
+      showToast('金额必须大于0，最多两位小数，且不超过999999999.99', 'error');
+      return;
+    }
+    if (type === 'income' && incomeKind === 'business' && profit === null) {
+      showToast('成本必须为非负金额，最多两位小数，且不超过999999999.99', 'error');
       return;
     }
     setLoading(true);
     try {
       const payload = {
         name: name.trim(),
-        amount: parseFloat(amount),
+        amount: amountCents / 100,
         type,
         income_kind: type === 'income' ? incomeKind : null,
-        profit: type === 'income' && incomeKind === 'business' && profit ? parseFloat(profit) : null,
+        ...(type === 'income' && incomeKind === 'business'
+          ? { cost: moneyToCents(cost.trim() || '0') / 100 }
+          : {}),
         category_id: categoryId || null,
         account_id: accountId || null,
         note: note.trim() || null,
@@ -95,8 +95,8 @@ export default function AddRecord({ onClose, onSuccess, editData }) {
           </div>
 
           <div className="form-group">
-            <label>金额 (¥)</label>
-            <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" min="0.01" step="0.01" />
+            <label htmlFor={`${formId}-amount`}>金额 (¥)</label>
+            <input id={`${formId}-amount`} type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" min="0.01" max="999999999.99" step="0.01" />
           </div>
 
           {type === 'income' && (
@@ -106,7 +106,7 @@ export default function AddRecord({ onClose, onSuccess, editData }) {
                 <button
                   type="button"
                   className={`kind-tab ${incomeKind === 'pure' ? 'active pure' : ''}`}
-                  onClick={() => { setIncomeKind('pure'); setProfit(''); }}
+                  onClick={() => setIncomeKind('pure')}
                 >
                   纯收入
                 </button>
@@ -118,16 +118,40 @@ export default function AddRecord({ onClose, onSuccess, editData }) {
                   经营
                 </button>
               </div>
-              {incomeKind === 'business' && (
-                <input
-                  type="number"
-                  value={profit}
-                  onChange={e => setProfit(e.target.value)}
-                  placeholder="盈利金额（可不填）"
-                  min="0"
-                  step="0.01"
-                />
-              )}
+            </div>
+          )}
+
+          {type === 'income' && incomeKind === 'business' && (
+            <div className="business-fields">
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor={`${formId}-cost`}>成本金额 (¥)</label>
+                  <input
+                    id={`${formId}-cost`}
+                    type="number"
+                    value={cost}
+                    onChange={e => setCost(e.target.value)}
+                    placeholder="0.00（可不填）"
+                    min="0"
+                    max="999999999.99"
+                    step="0.01"
+                    aria-describedby={`${formId}-profit-hint`}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor={`${formId}-profit`}>盈利金额 (¥)</label>
+                  <input
+                    id={`${formId}-profit`}
+                    type="text"
+                    value={profit === null ? '' : profit.toFixed(2)}
+                    placeholder="自动计算"
+                    readOnly
+                    className={`business-profit ${profit < 0 ? 'amount-expense' : 'amount-income'}`}
+                    aria-describedby={`${formId}-profit-hint`}
+                  />
+                </div>
+              </div>
+              <p id={`${formId}-profit-hint`} className="label-hint">盈利 = 收入金额 − 总成本；成本不填按0计算，负数表示亏损。</p>
             </div>
           )}
 
